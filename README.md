@@ -21,6 +21,35 @@ python main.py               # 日常模式：8进程增量补数据 + 跑策略
 python main.py --backfill     # 回填模式：全市场历史K线一次性灌入（约12分钟）
 ```
 
+### 自用调试开关（可叠加）
+
+```bash
+python main.py --dry-run                 # 跑策略 + 写本地备份，但不推送飞书，结果打印终端
+python main.py --no-sync                 # 跳过联网增量同步，直接用本地库跑（任意时间验证）
+python main.py --only ma_volume,turtle   # 本次只跑指定策略（覆盖 ENABLED_STRATEGIES）
+python main.py --dry-run --no-sync       # 不联网、不推送，纯看选股结果
+```
+
+---
+
+## 自用增强 | Personal Customization
+
+在 `.env` 中按需配置（全部可选，详见 `.env.example`）：
+
+| 配置项 | 说明 |
+|---|---|
+| `ENABLED_STRATEGIES` | 逗号分隔的策略开关（webhook_key），留空 = 全部启用 |
+| `WATCHLIST_PATH` | 自选股池文件（每行一个代码）。非空时只在池内选股，默认 `data/watchlist.txt` |
+| `EXCLUDE_PREFIXES` | 代码前缀黑名单，如 `688,8,4` 排除科创板/北交所；加 `300` 排除创业板 |
+| `EXCLUDE_ST` | `true` 时排除名称含 "ST" 的股票（需联网查名，较慢） |
+| `RESULTS_DIR` | 本地结果备份目录，默认 `data/results`（生成 `history.csv` 与每日 Markdown） |
+
+策略 `webhook_key` 取值：`ma_volume` / `turtle` / `flag` / `shakeout` / `limit_down` / `rps` / `private_placement`。
+
+每次有选股结果时，除推送飞书外，还会在 `RESULTS_DIR` 下追加：
+- `history.csv`：明细（`date,strategy,symbol,name`），便于复盘统计；
+- `<YYYY-MM-DD>.md`：当日按策略分节的选股清单。
+
 ---
 
 ## 内置策略 | Strategies

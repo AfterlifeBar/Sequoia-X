@@ -9,6 +9,18 @@ class Settings(BaseSettings):
     feishu_webhook_url: str  # 必填字段，缺失时抛出 ValidationError
     strategy_webhooks: dict[str, str] = {}
 
+    # ── 自用增强配置（均带默认值，向后兼容）──
+    # 启用的策略，逗号分隔的 webhook_key 列表；空字符串 = 全部启用。
+    enabled_strategies: str = ""
+    # 自选股池文件路径，每行一个纯数字代码；文件不存在或为空则不过滤（全市场）。
+    watchlist_path: str = "data/watchlist.txt"
+    # 代码前缀黑名单，逗号分隔，如 "688,8,4"（排除科创板/北交所）。
+    exclude_prefixes: str = ""
+    # 是否排除名称含 "ST" 的股票（需 baostock 查名，较慢，默认关闭）。
+    exclude_st: bool = False
+    # 本地结果备份输出目录。
+    results_dir: str = "data/results"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -69,6 +81,14 @@ class Settings(BaseSettings):
             对应的 Webhook URL 字符串。
         """
         return self.strategy_webhooks.get(webhook_key.lower(), self.feishu_webhook_url)
+
+    def enabled_strategy_keys(self) -> set[str]:
+        """解析 enabled_strategies 为小写 webhook_key 集合；空集合表示全部启用。"""
+        return {k.strip().lower() for k in self.enabled_strategies.split(",") if k.strip()}
+
+    def exclude_prefix_list(self) -> list[str]:
+        """解析 exclude_prefixes 为前缀列表。"""
+        return [p.strip() for p in self.exclude_prefixes.split(",") if p.strip()]
 
 
 _settings: Settings | None = None
