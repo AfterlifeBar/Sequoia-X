@@ -51,3 +51,53 @@ def test_unique_symbol_date_constraint(symbol: str, trade_date: date) -> None:
                 (symbol, str(trade_date)),
             ).fetchone()[0]
         assert count == 1
+
+
+def _seed(engine: DataEngine, rows: list[dict]) -> None:
+    with sqlite3.connect(engine.db_path) as conn:
+        pd.DataFrame(rows).to_sql(
+            "stock_daily", conn, if_exists="append", index=False, method="multi"
+        )
+
+
+def _bar(symbol: str, d: str, close: float) -> dict:
+    return {
+        "symbol": symbol, "date": d,
+        "open": close, "high": close, "low": close, "close": close,
+        "volume": 1000.0, "turnover": close * 1000.0,
+    }
+
+
+def test_preload_matches_sql_and_lists_symbols() -> None:
+    """preload() 后 get_ohlcv/get_local_symbols 走内存，结果应与 SQL 一致。"""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        engine, _ = make_engine_in(tmp_dir)
+        _seed(engine, [
+            _bar("600000", "2024-01-02", 10.0),
+            _bar("600000", "2024-01-03", 10.5),
+            _bar("000001", "2024-01-02", 20.0),
+        ])
+
+        sql_df = engine.get_ohlcv("600000")  # 缓存前走 SQL
+        engine.preload()
+
+        assert set(engine.get_local_symbols()) == {"600000", "000001"}
+        cached_df = engine.get_ohlcv("600000")  # 缓存后走内存
+        pd.testing.assert_frame_equal(
+            cached_df[["symbol", "date", "close"]],
+            sql_df[["symbol", "date", "close"]],
+        )
+        # 缺失的 symbol 返回空 df
+        assert engine.get_ohlcv("999999").empty
+
+
+def test_preload_returns_independent_copy() -> None:
+    """get_ohlcv 返回的是独立副本，修改它不应污染缓存。"""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        engine, _ = make_engine_in(tmp_dir)
+        _seed(engine, [_bar("600000", "2024-01-02", 10.0)])
+        engine.preload()
+
+        df = engine.get_ohlcv("600000")
+        df["ma5"] = 1.0  # 模拟策略写入
+        assert "ma5" not in engine.get_ohlcv("600000").columns

@@ -2,6 +2,7 @@
 
 import pandas as pd
 
+from sequoia_x.core.board import LIMIT_EPS, limit_pct
 from sequoia_x.core.logger import get_logger
 from sequoia_x.strategy.base import BaseStrategy
 
@@ -45,8 +46,9 @@ class LimitUpShakeoutStrategy(BaseStrategy):
                 prev1 = df.iloc[-2]  # 昨日
                 today = df.iloc[-1]  # 今日
 
-                # 条件 1：昨日涨停
-                limit_up_yesterday = prev1["close"] >= prev2["close"] * 1.095
+                # 条件 1：昨日涨停（按板块涨停幅度自适配）
+                up = 1 + limit_pct(symbol)
+                limit_up_yesterday = prev1["close"] >= prev2["close"] * up * (1 - LIMIT_EPS)
                 # 条件 2：今日收阴
                 bearish_today = today["close"] < today["open"]
                 # 条件 3：今日放量

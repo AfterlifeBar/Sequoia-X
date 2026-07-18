@@ -59,6 +59,8 @@ class DataEngine:
     def __init__(self, settings: Settings) -> None:
         self.db_path: str = settings.db_path
         self.start_date: str = settings.start_date
+        # 全市场行情内存缓存：{symbol: DataFrame}。None 表示未预加载（走 SQL 回退）。
+        self._cache: dict[str, pd.DataFrame] | None = None
         self._init_db()
 
     def _init_db(self) -> None:
@@ -77,7 +79,35 @@ class DataEngine:
             ).fetchone()
         return row[0] if row and row[0] else None
 
+    def preload(self) -> None:
+        """一次性把全市场行情读入内存缓存，供逐股策略复用。
+
+        避免每个策略对每只股票单独开连接查询（5 策略 × ~5200 只）。
+        调用后 get_ohlcv / get_local_symbols 改由内存命中；未调用则维持原 SQL 行为。
+        """
+        import time
+
+        t0 = time.perf_counter()
+        with sqlite3.connect(self.db_path) as conn:
+            df = pd.read_sql(
+                "SELECT * FROM stock_daily ORDER BY symbol, date", conn
+            )
+
+        # 按 symbol 分组成 {symbol: DataFrame}（组内已按 date 有序）
+        cache = {symbol: g.reset_index(drop=True) for symbol, g in df.groupby("symbol")}
+        self._cache = cache
+
+        elapsed = time.perf_counter() - t0
+        logger.info(f"行情预加载完成：{len(cache)} 只股票，耗时 {elapsed:.1f}s")
+
     def get_ohlcv(self, symbol: str) -> pd.DataFrame:
+        # 命中内存缓存时返回独立副本（保持"每次返回新 df"语义，写入不污染缓存）
+        if self._cache is not None:
+            cached = self._cache.get(symbol)
+            if cached is None:
+                return pd.DataFrame()
+            return cached.copy()
+
         with sqlite3.connect(self.db_path) as conn:
             df = pd.read_sql(
                 "SELECT * FROM stock_daily WHERE symbol = ? ORDER BY date",
@@ -326,6 +356,8 @@ class DataEngine:
             bs.logout()
 
     def get_local_symbols(self) -> list[str]:
+        if self._cache is not None:
+            return list(self._cache.keys())
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
                 "SELECT DISTINCT symbol FROM stock_daily"

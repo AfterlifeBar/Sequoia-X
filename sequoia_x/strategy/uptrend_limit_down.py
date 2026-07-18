@@ -2,6 +2,7 @@
 
 import pandas as pd
 
+from sequoia_x.core.board import LIMIT_EPS, limit_pct
 from sequoia_x.core.logger import get_logger
 from sequoia_x.strategy.base import BaseStrategy
 
@@ -52,8 +53,9 @@ class UptrendLimitDownStrategy(BaseStrategy):
 
                 # 条件 1：上升趋势（昨日均线多头排列）
                 uptrend = prev["ma20"] > prev["ma60"]
-                # 条件 2：放量跌停
-                limit_down = today["close"] <= prev["close"] * 0.905
+                # 条件 2：放量跌停（按板块跌停幅度自适配）
+                down = 1 - limit_pct(symbol)
+                limit_down = today["close"] <= prev["close"] * down * (1 + LIMIT_EPS)
                 volume_surge = today["volume"] > today["vol_ma20"] * 2.0
 
                 if uptrend and limit_down and volume_surge:

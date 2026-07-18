@@ -118,6 +118,9 @@ def main() -> None:
             count = engine.sync_today_bulk()
             logger.info(f"快照同步完成，写入 {count} 只股票")
 
+        # 一次性预加载全市场行情进内存，供逐股策略复用（避免重复开连接）
+        engine.preload()
+
         # 4. 按配置/CLI 选定要运行的策略
         only_keys = {k.strip().lower() for k in args.only.split(",") if k.strip()}
         strategy_classes = _select_strategy_classes(
